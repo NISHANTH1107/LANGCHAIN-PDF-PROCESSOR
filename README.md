@@ -19,7 +19,7 @@ This project requires the following packages:
 - `langchain-google-genai`
 - `python-dotenv`
 
-##run 
+## Run 
 pip install langchain_community
 
 ## Setup and Installation
@@ -29,3 +29,4 @@ pip install langchain_community
 ```bash
 git clone https://github.com/your-username/your-repo-name.git
 cd your-repo-name
+
