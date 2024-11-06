@@ -1,6 +1,10 @@
 ﻿streamlit
+python-dotenv
 PyPDF2
 langchain
-faiss-cpu
 langchain-google-genai
-python-dotenv
+google-generativeai
+yt-dlp
+qrcode
+Pillow
+reportlab

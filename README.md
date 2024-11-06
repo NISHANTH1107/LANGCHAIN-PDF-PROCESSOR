@@ -38,6 +38,10 @@ This project requires the following packages:
 - `faiss-cpu`
 - `langchain-google-genai`
 - `python-dotenv`
+- `yt-dlp`
+- `qrcode`
+- `Pillow`
+- `reportlab`
 
 ## Run
 ```bash 
