@@ -9,6 +9,26 @@ This project provides a PDF chatbot built with Streamlit, which enables users to
 - **Vector Search**: Stores text embeddings for similarity search using FAISS.
 - **Conversational Interface**: Allows users to query the PDF content and receive detailed answers.
 
+## Setup and Installation
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/your-username/your-repo-name.git
+cd your-repo-name
+```
+### 2. Setup API Key
+
+To use Google Generative AI in the project, you need to set up an API key.
+
+**1.** Create a .env file in the root directory of the project (if one doesn't exist already).
+**2.** Obtain your API key from Google Cloud by following their documentation on creating API keys.
+**3.** Add your API key to the .env file as shown below:
+
+```bash
+GOOGLE_API_KEY=your-api-key-here
+```
+
 ## Requirements
 
 This project requires the following packages:
@@ -19,14 +39,11 @@ This project requires the following packages:
 - `langchain-google-genai`
 - `python-dotenv`
 
-## Run 
+## Run
+```bash 
 pip install langchain_community
+```
 
-## Setup and Installation
-
-### 1. Clone the Repository
-
+### To Run the App 
 ```bash
-git clone https://github.com/your-username/your-repo-name.git
-cd your-repo-name
-
+streamlit run app.py

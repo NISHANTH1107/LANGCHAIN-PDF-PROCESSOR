@@ -15,6 +15,7 @@ load_dotenv()
 API_KEY = os.getenv("API_KEY")
 
 # Configure the API with the provided key
+os.environ["GOOGLE_API_KEY"] = API_KEY  # Set the API Key explicitly for the session
 genai.configure(api_key=API_KEY)
 
 def get_pdf_text(pdf_docs):
@@ -31,7 +32,7 @@ def get_text_chunks(text):
     return chunks
 
 def get_vector_store(text_chunks):
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    embeddings = GoogleGenerativeAIEmbeddings(api_key=API_KEY, model="models/embedding-001")
     vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
     vector_store.save_local("faiss_index")  # This creates the index
 
@@ -59,7 +60,7 @@ def get_conversational_chain():
     return chain
 
 def user_input(user_question):
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    embeddings = GoogleGenerativeAIEmbeddings(api_key=API_KEY, model="models/embedding-001")
     new_db = load_vector_store(embeddings)
     if new_db is None:  # If the index couldn't be loaded, exit early
         return
@@ -98,3 +99,5 @@ if pdf_file:
     if user_question:
         answer = user_input(user_question)
         st.write("Reply:", answer)
+
+print("API", API_KEY)
