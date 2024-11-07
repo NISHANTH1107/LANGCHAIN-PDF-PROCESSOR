@@ -8,4 +8,3 @@ yt-dlp
 qrcode
 Pillow
 reportlab
-langchain_community
