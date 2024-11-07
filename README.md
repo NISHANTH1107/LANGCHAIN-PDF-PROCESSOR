@@ -8,6 +8,8 @@ This project provides a PDF chatbot built with Streamlit, which enables users to
 - **Text Chunking**: Splits extracted text into manageable chunks for efficient processing.
 - **Vector Search**: Stores text embeddings for similarity search using FAISS.
 - **Conversational Interface**: Allows users to query the PDF content and receive detailed answers.
+- **YouTube Video Downloader**: Downloads videos from YouTube using `yt-dlp`.
+- **QR Code Generation**: Generates and allows the download of QR codes from user-provided data.
 
 ## Setup and Installation
 
@@ -51,3 +53,12 @@ pip install langchain_community
 ### To Run the App 
 ```bash
 streamlit run app.py
+```
+The application will launch locally, and you can interact with the PDF chatbot, download YouTube videos, and generate QR codes.
+
+### How It Works
+**1.** PDF Upload: Upload a PDF file using the file uploader.
+**2.** Processing PDF: Once the file is uploaded, click on the "Process PDF" button to extract and split the text from the PDF.
+**3.** Ask Questions: After processing, you can input a question, and the chatbot will provide answers based on the content of the uploaded PDF.
+**4.** YouTube Video Downloader: Enter a YouTube video URL and click "Download Video" to download the video to your system.
+**5.** QR Code Generator: Provide any text or URL, and the app will generate a QR code for you to download.
