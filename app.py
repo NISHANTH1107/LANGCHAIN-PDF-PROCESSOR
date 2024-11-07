@@ -19,7 +19,7 @@ from reportlab.pdfgen import canvas
 
 # Load environment variables from .env file
 load_dotenv()
-API_KEY = os.getenv("API_KEY")
+API_KEY = st.secrets("API_KEY")
 
 # Configure the API with the provided key
 os.environ["GOOGLE_API_KEY"] = API_KEY  # Set the API Key explicitly for the session
