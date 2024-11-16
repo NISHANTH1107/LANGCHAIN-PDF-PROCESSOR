@@ -109,22 +109,38 @@ if pdf_file:
 
 # YouTube Video Downloader using yt-dlp
 def download_video_with_yt_dlp(url):
+    # Define the options for yt-dlp
     ydl_opts = {
         'format': 'best',
         'outtmpl': '%(title)s.%(ext)s',  # Save with the video title as the filename
     }
 
     try:
-        # Download the video and return its filename and byte data
+        # Download the video with yt-dlp
         with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)  # Download video immediately
-            filename = f"{info['title']}.mp4"  # Ensure correct extension
-            with open(filename, "rb") as video_file:
+            info = ydl.extract_info(url, download=True)
+            filename = f"{info['title']}.mp4"  # Get the video title as filename
+
+            # Sanitize the filename to replace invalid characters for the file system
+            sanitized_filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+
+            # If the filename is too long (on Windows), truncate it
+            max_filename_length = 255  # Max length for filenames in most file systems
+            if len(sanitized_filename) > max_filename_length:
+                sanitized_filename = sanitized_filename[:max_filename_length]
+
+            # Define a temporary path in Streamlit's temporary directory
+            temp_path = os.path.join("/tmp", sanitized_filename)
+
+            # Ensure the file is saved in the temporary directory
+            with open(temp_path, "rb") as video_file:
                 video_bytes = video_file.read()  # Read video into memory
-            return filename, video_bytes
+
+            return sanitized_filename, video_bytes
+
     except Exception as e:
         return None, str(e)
-
+    
 # Streamlit app section for YouTube Downloader
 st.header("YouTube Video Downloader")
 video_url = st.text_input("Enter the YouTube video URL and press Enter:", key="youtube_url")
