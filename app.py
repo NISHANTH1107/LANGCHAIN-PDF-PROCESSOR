@@ -109,37 +109,43 @@ if pdf_file:
 
 # YouTube Video Downloader using yt-dlp
 def download_video_with_yt_dlp(url):
-    download_folder = get_default_download_folder()
     ydl_opts = {
         'format': 'best',
-        'outtmpl': os.path.join(download_folder, '%(title)s.%(ext)s'),  # Save to the default download folder
+        'outtmpl': '%(title)s.%(ext)s',  # Save with the video title as the filename
     }
 
     try:
-        with youtube_dl.YoutubeDL(ydl_opts) as ydl:  # Use youtube_dl (yt-dlp) here
-            result = ydl.extract_info(url, download=True)
-            return f"Video '{result['title']}' downloaded successfully to {download_folder}."
+        # Download the video and return its filename and byte data
+        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)  # Download video immediately
+            filename = f"{info['title']}.mp4"  # Ensure correct extension
+            with open(filename, "rb") as video_file:
+                video_bytes = video_file.read()  # Read video into memory
+            return filename, video_bytes
     except Exception as e:
-        return f"Error: {e}"
-    
-# Get the user's default download folder based on the operating system
-def get_default_download_folder():
-    if platform.system() == "Windows":
-        return os.path.join(os.environ["USERPROFILE"], "Downloads")  # For Windows
-    else:
-        return os.path.join(os.path.expanduser("~"), "Downloads")  # For macOS/Linux
+        return None, str(e)
 
 # Streamlit app section for YouTube Downloader
 st.header("YouTube Video Downloader")
-video_url = st.text_input("Enter the YouTube video URL:")
+video_url = st.text_input("Enter the YouTube video URL and press Enter:", key="youtube_url")
 
-if video_url:
-    if st.button("Download Video"):
-        try:
-            message = download_video_with_yt_dlp(video_url)
-            st.success(message)
-        except Exception as e:
-            st.error(f"An error occurred: {e}")
+if video_url:  # Trigger processing when a URL is entered
+    # Process the video immediately
+    filename, result = download_video_with_yt_dlp(video_url)
+
+    if filename:
+        st.success(f"Video '{filename}' is ready for download!")
+
+        # Display a single "Download Video" button for downloading the file
+        st.download_button(
+            label="Download Video",
+            data=result,
+            file_name=filename,
+            mime="video/mp4",
+            key="download_video_button"
+        )
+    else:
+        st.error(f"An error occurred: {result}")
 
 
 # Function to generate a QR code
@@ -177,17 +183,31 @@ if qr_data:
             # Display the generated QR code
             st.image(qr_image, caption="Generated QR Code")
 
-            # Allow the user to specify a filename for the QR Code
-            filename = st.text_input("Enter a name for the QR Code (without extension):", "qr_code", key="filename_input")
+            # Initialize the filename in session state if not already set
+            if "qr_filename" not in st.session_state:
+                st.session_state.qr_filename = "qr_code"
+
+            # Input field to specify filename
+            qr_filename_input = st.text_input(
+                "Enter a name for the QR Code (without extension):",
+                value=st.session_state.qr_filename,  # Use the session state value
+                key="qr_filename_input",
+                on_change=lambda: setattr(
+                    st.session_state, "qr_filename", st.session_state.qr_filename_input
+                ),  # Update the session state when the input changes
+            )
+
+            # Use the session state filename with a .png extension
+            download_filename = f"{st.session_state.qr_filename.strip() or 'qr_code'}.png"
 
             # Provide an option to download as PNG
             st.download_button(
                 label="Download QR Code",
                 data=qr_image,
-                file_name=f"{filename}.png",
+                file_name=download_filename,
                 mime="image/png",
                 key="download_button"
             )
-            
+
         except Exception as e:
             st.error(f"Error: {e}")
