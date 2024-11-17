@@ -11,5 +11,3 @@ reportlab
 faiss-cpu
 instaloader
 langchain_community
-requests
-glob
