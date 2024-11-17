@@ -9,4 +9,7 @@ qrcode
 Pillow
 reportlab
 faiss-cpu
+instaloader
 langchain_community
+requests
+glob

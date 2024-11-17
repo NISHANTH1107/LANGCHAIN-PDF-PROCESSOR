@@ -16,6 +16,9 @@ import yt_dlp as youtube_dl
 import io 
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
+import instaloader
+import glob
+import requests
 
 # Load environment variables from .env file
 load_dotenv()
@@ -221,3 +224,61 @@ if qr_data:
 
         except Exception as e:
             st.error(f"Error: {e}")
+
+# Function to download Instagram posts/reels
+def download_public_instagram_post(url):
+    loader = instaloader.Instaloader()
+
+    try:
+        # Extract the shortcode from the URL
+        post_shortcode = url.split("/")[-2]
+        
+        # Fetch the post object
+        post = instaloader.Post.from_shortcode(loader.context, post_shortcode)
+
+        # Check if the post contains a video (reel or regular video)
+        if post.is_video:
+            # Download the video content
+            video_url = post.video_url
+            response = requests.get(video_url, stream=True)
+
+            if response.status_code == 200:
+                filename = f"{post_shortcode}.mp4"
+                file_bytes = response.content
+                return filename, file_bytes
+            else:
+                return None, f"Failed to download the video from URL: {video_url}"
+        else:
+            # Download the image content
+            image_url = post.url
+            response = requests.get(image_url, stream=True)
+
+            if response.status_code == 200:
+                filename = f"{post_shortcode}.jpg"
+                file_bytes = response.content
+                return filename, file_bytes
+            else:
+                return None, f"Failed to download the image from URL: {image_url}"
+
+    except Exception as e:
+        return None, f"Error downloading Instagram post: {e}"
+    
+# Streamlit app section for Instagram Downloader
+st.header("Instagram Public Post Downloader")
+insta_url = st.text_input("Enter the public Instagram post URL:")
+
+if insta_url:
+    if st.button("Download Instagram Post"):
+        filename, result = download_public_instagram_post(insta_url)
+
+        if filename:
+            media_type = "Video" if filename.endswith(".mp4") else "Image"
+            st.success(f"{media_type} '{filename}' is ready for download!")
+            st.download_button(
+                label=f"Download {media_type}",
+                data=result,
+                file_name=filename,
+                mime="video/mp4" if filename.endswith(".mp4") else "image/jpeg",
+            )
+        else:
+            st.error(f"An error occurred: {result}")
