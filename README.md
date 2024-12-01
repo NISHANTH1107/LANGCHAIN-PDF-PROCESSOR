@@ -10,6 +10,12 @@ This project provides a PDF chatbot built with Streamlit, which enables users to
 - **Conversational Interface**: Allows users to query the PDF content and receive detailed answers.
 - **YouTube Video Downloader**: Downloads videos from YouTube using `yt-dlp`.
 - **QR Code Generation**: Generates and allows the download of QR codes from user-provided data.
+- **Instagram Downloader**: Downloads public posts and videos from Instagram using `instaloader`.
+
+## Link to the App
+```bash
+https://langchain-pdf-procesor.streamlit.app/
+```
 
 ## Setup and Installation
 
@@ -44,6 +50,7 @@ This project requires the following packages:
 - `qrcode`
 - `Pillow`
 - `reportlab`
+- `instaloader`
 
 ## Run
 ```bash 
@@ -62,3 +69,4 @@ The application will launch locally, and you can interact with the PDF chatbot, 
 - **3.** Ask Questions: After processing, you can input a question, and the chatbot will provide answers based on the content of the uploaded PDF.
 - **4.** YouTube Video Downloader: Enter a YouTube video URL and click "Download Video" to download the video to your system.
 - **5.** QR Code Generator: Provide any text or URL, and the app will generate a QR code for you to download.
+- **6.** Instagram Downloader: Enter the URL of a public Instagram post or video, and the app will download it to your system.
