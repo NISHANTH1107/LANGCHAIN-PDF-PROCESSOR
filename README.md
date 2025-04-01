@@ -14,7 +14,7 @@ This project provides a PDF chatbot built with Streamlit, which enables users to
 
 ## Link to the App
 ```bash
-https://langchain-pdf-procesor.streamlit.app/
+https://nishanth11.streamlit.app/
 ```
 
 ## Setup and Installation
