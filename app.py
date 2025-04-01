@@ -15,6 +15,20 @@ import io
 import instaloader
 import requests
 
+
+def check_api_status():
+    try:
+        genai.configure(api_key=st.secrets["general"]["API_KEY"])
+        model = genai.GenerativeModel('gemini-pro')
+        response = model.generate_content("Test connection")
+        return True
+    except Exception as e:
+        st.error(f"API Connection Failed: {str(e)}")
+        return False
+
+if not check_api_status():
+    st.stop()  # Don't proceed if API isn't working
+
 # Configure the API with the provided key
 try:
     genai.configure(api_key=st.secrets["general"]["API_KEY"])
@@ -31,15 +45,25 @@ def get_pdf_text(pdf_docs):
     return text
 
 def get_text_chunks(text):
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=10000, chunk_overlap=1000)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=5000, chunk_overlap=300)
     chunks = text_splitter.split_text(text)
     return chunks
+
 
 def get_vector_store(text_chunks):
     try:
         embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+        
+        # Add a progress bar
+        progress_bar = st.progress(0)
+        for i, chunk in enumerate(text_chunks):
+            # Process in smaller batches if needed
+            if i % 10 == 0:  # Update progress every 10 chunks
+                progress_bar.progress(i / len(text_chunks))
+                
         vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
         vector_store.save_local("faiss_index")
+        progress_bar.progress(1.0)  # Complete the progress bar
         return True
     except Exception as e:
         st.error(f"Error creating vector store: {str(e)}")
@@ -103,18 +127,28 @@ if pdf_file:
         tmp.write(pdf_file.getbuffer())
         tmp_path = tmp.name
 
+    
     if st.button("Process PDF"):
         with st.spinner("Processing PDF..."):
             try:
                 raw_text = get_pdf_text([tmp_path])
+                st.write(f"Extracted {len(raw_text)} characters of text")
+                
                 if not raw_text.strip():
                     st.error("No text could be extracted from the PDF")
                 else:
                     text_chunks = get_text_chunks(raw_text)
-                    if get_vector_store(text_chunks):
+                    st.write(f"Created {len(text_chunks)} text chunks")
+                    
+                    success = get_vector_store(text_chunks)
+                    if success:
                         st.success("PDF processed successfully!")
+                    else:
+                        st.error("Failed to create vector store")
             except Exception as e:
                 st.error(f"Error processing PDF: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
             finally:
                 os.unlink(tmp_path)
 
@@ -123,7 +157,7 @@ if pdf_file:
         answer = user_input(user_question)
         st.write("Reply:", answer)
 
-# [Rest of your existing code for YouTube downloader, QR code generator, and Instagram downloader...]
+
 # Keep all those functions exactly as they were
 
 # YouTube Video Downloader using yt-dlp
