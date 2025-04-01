@@ -1,39 +1,33 @@
 import os
+import tempfile
 import streamlit as st
-from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings ,ChatGoogleGenerativeAI
+from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 import google.generativeai as genai
 from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
 from langchain.prompts import PromptTemplate
 import qrcode
 from PIL import Image
-import re
-import platform
 import yt_dlp as youtube_dl
-import io 
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
+import io
 import instaloader
-import glob
 import requests
 
-# Load environment variables from .env file
-load_dotenv()
-API_KEY = st.secrets["general"]["API_KEY"]
-
 # Configure the API with the provided key
-os.environ["GOOGLE_API_KEY"] = API_KEY  # Set the API Key explicitly for the session
-genai.configure(api_key=API_KEY)
+try:
+    genai.configure(api_key=st.secrets["general"]["API_KEY"])
+except Exception as e:
+    st.error("Failed to configure Google AI API. Please check your API key.")
+    st.stop()
 
 def get_pdf_text(pdf_docs):
     text = ""
     for pdf in pdf_docs:
         pdf_reader = PdfReader(pdf)
         for page in pdf_reader.pages:
-            text += page.extract_text()
+            text += page.extract_text() or ""  # Handle None return from extract_text()
     return text
 
 def get_text_chunks(text):
@@ -42,16 +36,22 @@ def get_text_chunks(text):
     return chunks
 
 def get_vector_store(text_chunks):
-    embeddings = GoogleGenerativeAIEmbeddings(api_key=API_KEY, model="models/embedding-001")
-    vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
-    vector_store.save_local("faiss_index")  # This creates the index
-
-def load_vector_store(embeddings):
     try:
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+        vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
+        vector_store.save_local("faiss_index")
+        return True
+    except Exception as e:
+        st.error(f"Error creating vector store: {str(e)}")
+        return False
+
+def load_vector_store():
+    try:
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
         new_db = FAISS.load_local("faiss_index", embeddings, allow_dangerous_deserialization=True)
         return new_db
-    except FileNotFoundError:
-        st.error("FAISS index not found. Please create it by processing PDF files first.")
+    except Exception as e:
+        st.error(f"Error loading vector store: {str(e)}")
         return None
 
 def get_conversational_chain():
@@ -63,52 +63,68 @@ def get_conversational_chain():
 
     Answer:
     """
-    model = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.3)
-
-    prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
-    chain = load_qa_chain(model, chain_type="stuff", prompt=prompt)
-    return chain
+    try:
+        model = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.3)
+        prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
+        chain = load_qa_chain(model, chain_type="stuff", prompt=prompt)
+        return chain
+    except Exception as e:
+        st.error(f"Error creating conversation chain: {str(e)}")
+        return None
 
 def user_input(user_question):
-    embeddings = GoogleGenerativeAIEmbeddings(api_key=API_KEY, model="models/embedding-001")
-    new_db = load_vector_store(embeddings)
-    if new_db is None:  # If the index couldn't be loaded, exit early
-        return
+    try:
+        new_db = load_vector_store()
+        if new_db is None:
+            return "Please process a PDF file first"
 
-    docs = new_db.similarity_search(user_question)
-    chain = get_conversational_chain()
+        chain = get_conversational_chain()
+        if chain is None:
+            return "Error initializing chatbot"
 
-    response = chain(
-        {"input_documents": docs, "question": user_question}, return_only_outputs=True
-    )
+        docs = new_db.similarity_search(user_question)
+        response = chain(
+            {"input_documents": docs, "question": user_question}, 
+            return_only_outputs=True
+        )
+        return response["output_text"]
+    except Exception as e:
+        st.error(f"Error processing your question: {str(e)}")
+        return "Sorry, I encountered an error processing your request"
 
-    return response["output_text"]
-
-# Streamlit app starts here
+# PDF Chatbot Section
 st.title("PDF Chatbot")
 st.write("Upload your PDF file and ask questions about its content.")
 
 pdf_file = st.file_uploader("Choose a PDF file", type="pdf")
 
 if pdf_file:
-    pdf_filename = pdf_file.name  # Use the uploaded file's original name
-    with open(pdf_filename, "wb") as f:
-        f.write(pdf_file.getbuffer())
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(pdf_file.getbuffer())
+        tmp_path = tmp.name
 
     if st.button("Process PDF"):
-        try:
-            raw_text = get_pdf_text([pdf_filename])
-            text_chunks = get_text_chunks(raw_text)
-            get_vector_store(text_chunks)
-            st.success("Done processing the PDF!")
-
-        except Exception as e:
-            st.error(f"Error processing the PDF file: {e}")
+        with st.spinner("Processing PDF..."):
+            try:
+                raw_text = get_pdf_text([tmp_path])
+                if not raw_text.strip():
+                    st.error("No text could be extracted from the PDF")
+                else:
+                    text_chunks = get_text_chunks(raw_text)
+                    if get_vector_store(text_chunks):
+                        st.success("PDF processed successfully!")
+            except Exception as e:
+                st.error(f"Error processing PDF: {str(e)}")
+            finally:
+                os.unlink(tmp_path)
 
     user_question = st.text_input("Ask a Question about the PDF:")
     if user_question:
         answer = user_input(user_question)
         st.write("Reply:", answer)
+
+# [Rest of your existing code for YouTube downloader, QR code generator, and Instagram downloader...]
+# Keep all those functions exactly as they were
 
 # YouTube Video Downloader using yt-dlp
 def download_video_with_yt_dlp(url):
