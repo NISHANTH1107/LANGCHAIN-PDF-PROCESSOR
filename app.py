@@ -41,9 +41,24 @@ def get_text_chunks(text):
     return chunks
 
 def get_vector_store(text_chunks):
-    embeddings = GoogleGenerativeAIEmbeddings(api_key=API_KEY, model="models/embedding-001")
-    vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
-    vector_store.save_local("faiss_index")  # This creates the index
+    embeddings = GoogleGenerativeAIEmbeddings(
+        api_key=API_KEY, 
+        model="models/embedding-001",
+        task_type="RETRIEVAL_DOCUMENT"  # Specify the task type explicitly
+    )
+    
+    # Process in smaller batches
+    batch_size = 5
+    for i in range(0, len(text_chunks), batch_size):
+        batch = text_chunks[i:i+batch_size]
+        st.write(f"Processing batch {i//batch_size + 1}/{(len(text_chunks) + batch_size - 1)//batch_size}")
+        
+        if i == 0:  # First batch, create the index
+            vector_store = FAISS.from_texts(batch, embedding=embeddings)
+        else:  # Subsequent batches, add to existing index
+            vector_store.add_texts(batch)
+    
+    vector_store.save_local("faiss_index")
 
 def load_vector_store(embeddings):
     try:
