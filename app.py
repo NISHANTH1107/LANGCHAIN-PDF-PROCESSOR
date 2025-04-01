@@ -24,7 +24,7 @@ import requests
 load_dotenv()
 API_KEY = st.secrets["general"]["API_KEY"]
 # Configure the API with the provided key
-os.environ["GOOGLE_API_KEY"] = API_KEY  # Set the API Key explicitly for the session
+# os.environ["GOOGLE_API_KEY"] = API_KEY  # Set the API Key explicitly for the session
 genai.configure(api_key=API_KEY)
 
 def get_pdf_text(pdf_docs):
