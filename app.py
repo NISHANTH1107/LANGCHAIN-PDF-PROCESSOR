@@ -1,81 +1,56 @@
 import os
-import tempfile
 import streamlit as st
+from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
+from langchain_google_genai import GoogleGenerativeAIEmbeddings ,ChatGoogleGenerativeAI
 import google.generativeai as genai
 from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
 from langchain.prompts import PromptTemplate
 import qrcode
 from PIL import Image
+import re
+import platform
 import yt_dlp as youtube_dl
-import io
+import io 
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
 import instaloader
+import glob
 import requests
 
-
-def check_api_status():
-    try:
-        genai.configure(api_key=st.secrets["general"]["API_KEY"])
-        model = genai.GenerativeModel('gemini-pro')
-        response = model.generate_content("Test connection")
-        return True
-    except Exception as e:
-        st.error(f"API Connection Failed: {str(e)}")
-        return False
-
-if not check_api_status():
-    st.stop()  # Don't proceed if API isn't working
-
+# Load environment variables from .env file
+load_dotenv()
+API_KEY = st.secrets["general"]["API_KEY"]
 # Configure the API with the provided key
-try:
-    genai.configure(api_key=st.secrets["general"]["API_KEY"])
-except Exception as e:
-    st.error("Failed to configure Google AI API. Please check your API key.")
-    st.stop()
+os.environ["GOOGLE_API_KEY"] = API_KEY  # Set the API Key explicitly for the session
+genai.configure(api_key=API_KEY)
 
 def get_pdf_text(pdf_docs):
     text = ""
     for pdf in pdf_docs:
         pdf_reader = PdfReader(pdf)
         for page in pdf_reader.pages:
-            text += page.extract_text() or ""  # Handle None return from extract_text()
+            text += page.extract_text()
     return text
 
 def get_text_chunks(text):
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=5000, chunk_overlap=300)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=10000, chunk_overlap=1000)
     chunks = text_splitter.split_text(text)
     return chunks
 
-
 def get_vector_store(text_chunks):
-    try:
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-        
-        # Add a progress bar
-        progress_bar = st.progress(0)
-        for i, chunk in enumerate(text_chunks):
-            # Process in smaller batches if needed
-            if i % 10 == 0:  # Update progress every 10 chunks
-                progress_bar.progress(i / len(text_chunks))
-                
-        vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
-        vector_store.save_local("faiss_index")
-        progress_bar.progress(1.0)  # Complete the progress bar
-        return True
-    except Exception as e:
-        st.error(f"Error creating vector store: {str(e)}")
-        return False
+    embeddings = GoogleGenerativeAIEmbeddings(api_key=API_KEY, model="models/embedding-001")
+    vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
+    vector_store.save_local("faiss_index")  # This creates the index
 
-def load_vector_store():
+def load_vector_store(embeddings):
     try:
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
         new_db = FAISS.load_local("faiss_index", embeddings, allow_dangerous_deserialization=True)
         return new_db
-    except Exception as e:
-        st.error(f"Error loading vector store: {str(e)}")
+    except FileNotFoundError:
+        st.error("FAISS index not found. Please create it by processing PDF files first.")
         return None
 
 def get_conversational_chain():
@@ -84,73 +59,44 @@ def get_conversational_chain():
     context, then just say, "answer is not available in the context." Don't provide the wrong answer.\n\n
     Context:\n {context}?\n
     Question:\n {question}\n
-
     Answer:
     """
-    try:
-        model = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.3)
-        prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
-        chain = load_qa_chain(model, chain_type="stuff", prompt=prompt)
-        return chain
-    except Exception as e:
-        st.error(f"Error creating conversation chain: {str(e)}")
-        return None
+    model = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.3)
+    prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
+    chain = load_qa_chain(model, chain_type="stuff", prompt=prompt)
+    return chain
 
 def user_input(user_question):
-    try:
-        new_db = load_vector_store()
-        if new_db is None:
-            return "Please process a PDF file first"
+    embeddings = GoogleGenerativeAIEmbeddings(api_key=API_KEY, model="models/embedding-001")
+    new_db = load_vector_store(embeddings)
+    if new_db is None:  # If the index couldn't be loaded, exit early
+        return
+    docs = new_db.similarity_search(user_question)
+    chain = get_conversational_chain()
+    response = chain(
+        {"input_documents": docs, "question": user_question}, return_only_outputs=True
+    )
+    return response["output_text"]
 
-        chain = get_conversational_chain()
-        if chain is None:
-            return "Error initializing chatbot"
-
-        docs = new_db.similarity_search(user_question)
-        response = chain(
-            {"input_documents": docs, "question": user_question}, 
-            return_only_outputs=True
-        )
-        return response["output_text"]
-    except Exception as e:
-        st.error(f"Error processing your question: {str(e)}")
-        return "Sorry, I encountered an error processing your request"
-
-# PDF Chatbot Section
+# Streamlit app starts here
 st.title("PDF Chatbot")
 st.write("Upload your PDF file and ask questions about its content.")
 
 pdf_file = st.file_uploader("Choose a PDF file", type="pdf")
 
 if pdf_file:
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-        tmp.write(pdf_file.getbuffer())
-        tmp_path = tmp.name
+    pdf_filename = pdf_file.name  # Use the uploaded file's original name
+    with open(pdf_filename, "wb") as f:
+        f.write(pdf_file.getbuffer())
 
-    
     if st.button("Process PDF"):
-        with st.spinner("Processing PDF..."):
-            try:
-                raw_text = get_pdf_text([tmp_path])
-                st.write(f"Extracted {len(raw_text)} characters of text")
-                
-                if not raw_text.strip():
-                    st.error("No text could be extracted from the PDF")
-                else:
-                    text_chunks = get_text_chunks(raw_text)
-                    st.write(f"Created {len(text_chunks)} text chunks")
-                    
-                    success = get_vector_store(text_chunks)
-                    if success:
-                        st.success("PDF processed successfully!")
-                    else:
-                        st.error("Failed to create vector store")
-            except Exception as e:
-                st.error(f"Error processing PDF: {str(e)}")
-                import traceback
-                st.code(traceback.format_exc())
-            finally:
-                os.unlink(tmp_path)
+        try:
+            raw_text = get_pdf_text([pdf_filename])
+            text_chunks = get_text_chunks(raw_text)
+            get_vector_store(text_chunks)
+            st.success("Done processing the PDF!")
+        except Exception as e:
+            st.error(f"Error processing the PDF file: {e}")
 
     user_question = st.text_input("Ask a Question about the PDF:")
     if user_question:
