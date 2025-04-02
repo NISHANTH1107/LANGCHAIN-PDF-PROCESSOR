@@ -24,10 +24,7 @@ import requests
 load_dotenv()
 API_KEY = st.secrets["general"]["API_KEY"]
 # Configure the API with the provided key
-API_KEY = os.getenv("GOOGLE_API_KEY")
-
-# Set the API Key explicitly for the session
-os.environ["GOOGLE_API_KEY"] = API_KEY
+os.environ["GOOGLE_API_KEY"] = API_KEY  # Set the API Key explicitly for the session
 
 # Configure the API with the provided key
 genai.configure(api_key=API_KEY)
