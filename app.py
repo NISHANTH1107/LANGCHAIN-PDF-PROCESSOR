@@ -22,12 +22,9 @@ import requests
 
 # Load environment variables from .env file
 load_dotenv()
-# API_KEY = st.secrets["general"]["API_KEY"]
+API_KEY = st.secrets["general"]["API_KEY"]
 # Configure the API with the provided key
 API_KEY = os.getenv("GOOGLE_API_KEY")
-
-if API_KEY is None:
-    raise ValueError("GOOGLE_API_KEY is not set in .env file")
 
 # Set the API Key explicitly for the session
 os.environ["GOOGLE_API_KEY"] = API_KEY
