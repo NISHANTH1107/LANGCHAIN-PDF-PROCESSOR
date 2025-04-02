@@ -3,7 +3,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings ,ChatGoogleGenerativeAI
+from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 import google.generativeai as genai
 from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
@@ -22,41 +22,82 @@ import requests
 
 # Load environment variables from .env file
 load_dotenv()
-API_KEY = st.secrets["general"]["API_KEY"]
+# API_KEY = st.secrets["general"]["API_KEY"]
 # Configure the API with the provided key
-os.environ["GOOGLE_API_KEY"] = API_KEY  # Set the API Key explicitly for the session
+API_KEY = os.getenv("GOOGLE_API_KEY")
+
+if API_KEY is None:
+    raise ValueError("GOOGLE_API_KEY is not set in .env file")
+
+# Set the API Key explicitly for the session
+os.environ["GOOGLE_API_KEY"] = API_KEY
+
+# Configure the API with the provided key
 genai.configure(api_key=API_KEY)
 
 def get_pdf_text(pdf_docs):
-    text = ""
+    """Extract text from multiple PDF files."""
+    text_dict = {}
     for pdf in pdf_docs:
         pdf_reader = PdfReader(pdf)
+        pdf_text = ""
         for page in pdf_reader.pages:
-            text += page.extract_text()
-    return text
+            # Get text and clean any internal PDF paths or metadata
+            page_text = page.extract_text()
+            # Remove any GID patterns (like those seen in the paste.txt example)
+            page_text = re.sub(r'\[From: /gid\d+/.*?\]', '', page_text)
+            pdf_text += page_text
+        text_dict[pdf.name] = pdf_text
+    return text_dict
 
-def get_text_chunks(text):
+def get_text_chunks(text_dict):
+    """Split text into chunks for each PDF, maintaining source information."""
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=10000, chunk_overlap=1000)
-    chunks = text_splitter.split_text(text)
-    return chunks
+    chunks_with_source = []
+    
+    for pdf_name, text in text_dict.items():
+        chunks = text_splitter.split_text(text)
+        # Add source metadata to each chunk
+        for chunk in chunks:
+            chunks_with_source.append({
+                "text": chunk,
+                "source": pdf_name
+            })
+    
+    return chunks_with_source
 
-def get_vector_store(text_chunks):
+def get_vector_store(chunks_with_source):
+    """Create vector store from text chunks with source metadata."""
     embeddings = GoogleGenerativeAIEmbeddings(
         api_key=API_KEY, 
         model="models/embedding-001",
-        task_type="RETRIEVAL_DOCUMENT"  # Specify the task type explicitly
+        task_type="RETRIEVAL_DOCUMENT"
     )
+    
+    # Extract just the text for creating embeddings
+    texts = [item["text"] for item in chunks_with_source]
+    
+    # Create metadata for each text chunk
+    metadatas = [{"source": item["source"]} for item in chunks_with_source]
     
     # Process in smaller batches
     batch_size = 5
-    for i in range(0, len(text_chunks), batch_size):
-        batch = text_chunks[i:i+batch_size]
-        st.write(f"Processing batch {i//batch_size + 1}/{(len(text_chunks) + batch_size - 1)//batch_size}")
+    for i in range(0, len(texts), batch_size):
+        batch_texts = texts[i:i+batch_size]
+        batch_metadatas = metadatas[i:i+batch_size]
+        st.write(f"Processing batch {i//batch_size + 1}/{(len(texts) + batch_size - 1)//batch_size}")
         
         if i == 0:  # First batch, create the index
-            vector_store = FAISS.from_texts(batch, embedding=embeddings)
+            vector_store = FAISS.from_texts(
+                texts=batch_texts, 
+                embedding=embeddings, 
+                metadatas=batch_metadatas
+            )
         else:  # Subsequent batches, add to existing index
-            vector_store.add_texts(batch)
+            vector_store.add_texts(
+                texts=batch_texts,
+                metadatas=batch_metadatas
+            )
     
     vector_store.save_local("faiss_index")
 
@@ -65,13 +106,20 @@ def load_vector_store(embeddings):
         new_db = FAISS.load_local("faiss_index", embeddings, allow_dangerous_deserialization=True)
         return new_db
     except FileNotFoundError:
-        st.error("FAISS index not found. Please create it by processing PDF files first.")
+        st.error("FAISS index not found. Please process PDF files first.")
         return None
 
 def get_conversational_chain():
     prompt_template = """
-    Answer the question in as detailed manner as possible from the provided context. Make sure to provide all the details. If the answer is not in the provided
-    context, then just say, "answer is not available in the context." Don't provide the wrong answer.\n\n
+    Answer the question in a detailed manner based on the provided context. 
+    If the answer is in multiple documents, clearly indicate which document each part of your answer comes from.
+    Include document sources in your response using the format: [Source: document_name]
+    If the answer is not in the provided context, just say "Answer is not available in the context."
+    Don't provide incorrect information.
+    
+    DO NOT include any internal PDF paths like "/gid00019/..." in your answers.
+    If you see such paths in the context, ignore them completely.
+
     Context:\n {context}?\n
     Question:\n {question}\n
     Answer:
@@ -81,45 +129,102 @@ def get_conversational_chain():
     chain = load_qa_chain(model, chain_type="stuff", prompt=prompt)
     return chain
 
+def clean_text(text):
+    """Clean text by removing any GID patterns or other PDF artifacts"""
+    # Remove patterns like [From: /gid00019/...]
+    cleaned = re.sub(r'\[From: /gid\d+/.*?\]', '', text)
+    # Remove other potential PDF artifacts if needed
+    return cleaned
+
 def user_input(user_question):
     embeddings = GoogleGenerativeAIEmbeddings(api_key=API_KEY, model="models/embedding-001")
     new_db = load_vector_store(embeddings)
     if new_db is None:  # If the index couldn't be loaded, exit early
-        return
+        return "Please process PDF files first before asking questions."
+    
     docs = new_db.similarity_search(user_question)
+    
+    # Debug information - show clean document sources
+    with st.expander("Debug Info (Sources)"):
+        for i, doc in enumerate(docs):
+            st.write(f"Document {i+1}: {doc.metadata['source']}")
+            # Show a preview of the document content without GID patterns
+            preview = clean_text(doc.page_content[:200]) + "..." if len(doc.page_content) > 200 else clean_text(doc.page_content)
+            st.text(preview)
+    
+    # Clean document content before sending to LLM
+    for doc in docs:
+        doc.page_content = clean_text(doc.page_content)
+    
     chain = get_conversational_chain()
     response = chain(
         {"input_documents": docs, "question": user_question}, return_only_outputs=True
     )
-    return response["output_text"]
+    
+    # Final cleaning of response (just in case)
+    clean_response = clean_text(response["output_text"])
+    return clean_response
 
 # Streamlit app starts here
-st.title("PDF Chatbot")
-st.write("Upload your PDF file and ask questions about its content.")
+st.title("Multi-PDF Chatbot")
+st.write("Upload multiple PDF files and ask questions about their content.")
 
-pdf_file = st.file_uploader("Choose a PDF file", type="pdf")
+# Allow uploading multiple PDF files
+pdf_files = st.file_uploader("Choose PDF files", type="pdf", accept_multiple_files=True)
 
-if pdf_file:
-    pdf_filename = pdf_file.name  # Use the uploaded file's original name
-    with open(pdf_filename, "wb") as f:
-        f.write(pdf_file.getbuffer())
-
-    if st.button("Process PDF"):
+if pdf_files:
+    # Display the list of uploaded files
+    st.write(f"Uploaded {len(pdf_files)} PDF files:")
+    for pdf in pdf_files:
+        st.write(f"- {pdf.name}")
+    
+    if st.button("Process PDFs"):
         try:
-            raw_text = get_pdf_text([pdf_filename])
-            text_chunks = get_text_chunks(raw_text)
-            get_vector_store(text_chunks)
-            st.success("Done processing the PDF!")
+            # Save uploaded files to disk temporarily
+            saved_files = []
+            for pdf in pdf_files:
+                pdf_path = pdf.name
+                with open(pdf_path, "wb") as f:
+                    f.write(pdf.getbuffer())
+                saved_files.append(pdf_path)
+            
+            # Extract text from PDFs with cleaning
+            text_dict = get_pdf_text(pdf_files)
+            
+            # Split text into chunks with source information
+            chunks_with_source = get_text_chunks(text_dict)
+            
+            # Create vector store
+            get_vector_store(chunks_with_source)
+            
+            st.success(f"Done processing {len(pdf_files)} PDF files!")
+            
+            # Store processed file names in session state for reference
+            st.session_state['processed_pdfs'] = [pdf.name for pdf in pdf_files]
+            
         except Exception as e:
-            st.error(f"Error processing the PDF file: {e}")
+            st.error(f"Error processing PDF files: {e}")
 
-    user_question = st.text_input("Ask a Question about the PDF:")
+    # Display list of processed files if available
+    if 'processed_pdfs' in st.session_state:
+        with st.expander("Currently processed PDFs"):
+            for pdf_name in st.session_state['processed_pdfs']:
+                st.write(f"- {pdf_name}")
+
+    # User question input with improved UI
+    st.subheader("Ask Questions")
+    user_question = st.text_input("Enter your question about the PDFs:")
     if user_question:
-        answer = user_input(user_question)
-        st.write("Reply:", answer)
+        with st.spinner("Searching for answer..."):
+            answer = user_input(user_question)
+        
+        st.markdown("### Answer:")
+        st.markdown(answer)
+        
+        # Option to ask a follow-up question
+        st.markdown("---")
+        st.markdown("**Ask another question or follow-up:**")
 
-
-# Keep all those functions exactly as they were
 
 # YouTube Video Downloader using yt-dlp
 def download_video_with_yt_dlp(url):
